@@ -1,4 +1,4 @@
-"""Build the energy-planning notebook from the model on pages 60–62."""
+"""Build the energy-planning notebook from section 3, pages 60–62."""
 
 from __future__ import annotations
 
@@ -23,20 +23,19 @@ def code(source: str) -> None:
 md(r"""
 # Дополнительное задание: Оптимизация состава электростанций
 
-**Дисциплина:** Системы поддержки принятия решений  
+**Дисциплина:** Системы поддержки принятия решений
+
 **Студент:** Боронин Дмитрий Денисович
 
-**Основа модели:** методическое пособие, § 3 «Применение линейного программирования к энергетике», с. 60–62, ограничения (3.2)–(3.6).
-
-В методичке минимизируются годовые эксплуатационные расходы. Здесь по условию дополнительного задания максимизируется отношение годовой выработки к капитальным и эксплуатационным затратам за первый год. Это показатель выработки на рубль затрат, а не физический КПД электростанции.
-
-Количество станций считается вещественным, как в LP-релаксации модели. Числовых коэффициентов в методичке нет; далее используется синтетический пример.
+**Источник модели:** методическое пособие, § 3 «Применение линейного программирования к энергетике», с. 60–62, формулы (3.1)–(3.6).
 """)
 
 md(r"""
-## Исходные данные
+## Постановка и исходные данные
 
-Для типа станции $j$ заданы гарантированная мощность $a_j$ и пиковая мощность $b_j$ (МВт), годовая выработка $c_j$ (ГВт·ч/год), капитальные затраты $d_j$ (млн руб.) и годовые эксплуатационные расходы $f_j$ (млн руб./год). В знаменателе дроби $q_j=d_j+f_j$ означает затраты за первый год. Требования $A,B,C,D$ имеют соответствующие единицы.
+Для каждого типа станции $j=1,\ldots,n$ заданы гарантированная мощность $a_j$, пиковая мощность $b_j$, годовая выработка $c_j$, стоимость строительства $d_j$ и годовые эксплуатационные расходы $f_j$. Требуется выбрать состав станций с минимальными годовыми эксплуатационными расходами при выполнении требований $A$, $B$, $C$ и бюджета $D$.
+
+В методичке приведена общая модель без числовой таблицы. Ниже — **синтетический пример** для трёх типов станций. Единицы мощности — МВт, выработки — ГВт·ч/год, затрат — млн руб.
 """)
 
 code('''
@@ -46,9 +45,6 @@ code('''
     from IPython.display import display
     from pyomo.opt import TerminationCondition
 
-    pd.set_option("display.max_columns", None)
-    pd.set_option("display.width", 120)
-
     stations = pd.DataFrame({
         "Тип": ["Базовая", "Пиковая", "Универсальная"],
         "a, МВт": [40, 90, 65],
@@ -57,75 +53,58 @@ code('''
         "d, млн руб.": [70, 160, 130],
         "f, млн руб./год": [10, 30, 20],
     }).set_index("Тип")
-    stations["q = d + f, млн руб."] = (
-        stations["d, млн руб."] + stations["f, млн руб./год"]
-    )
 
     A, B, C, D = 235, 350, 1300, 430
     requirements = pd.DataFrame({
-        "Показатель": ["Гарантированная мощность A", "Пиковая мощность B",
-                       "Годовая выработка C", "Бюджет D"],
+        "Показатель": [
+            "Гарантированная мощность A",
+            "Пиковая мощность B",
+            "Годовая выработка C",
+            "Бюджет строительства D",
+        ],
         "Требование": [A, B, C, D],
-        "Единица": ["МВт", "МВт", "ГВт·ч", "млн руб."],
-    })
+        "Единица": ["МВт", "МВт", "ГВт·ч/год", "млн руб."],
+    }).set_index("Показатель")
+
     display(stations)
-    display(requirements.set_index("Показатель"))
+    display(requirements)
 ''')
 
 md(r"""
-## Математическая модель
+## Математическая модель по методичке
 
-$x_j\ge0$ — число станций типа $j$, $q_j=d_j+f_j>0$. В методичке целевая функция имеет вид $\min L(x)=\sum_j f_jx_j$; в дополнительном задании вместо неё рассматривается дробно-линейная задача:
-
-$$
-\max_{x\ge0}\quad
-Z(x)=\frac{\sum_{j=1}^{3}c_jx_j}{\sum_{j=1}^{3}q_jx_j}
-$$
-
-$$
-\sum_j a_jx_j\ge A,\qquad
-\sum_j b_jx_j\ge B,\qquad
-\sum_j c_jx_j\ge C,\qquad
-\sum_j d_jx_j\le D.
-$$
-
-Подстановка Чарнеса—Купера:
-
-$$
-t=\left(\sum_j q_jx_j\right)^{-1},\qquad y_j=tx_j.
-$$
-
-После умножения ограничений на $t$ и нормировки знаменателя получается прямая задача линейного программирования:
+$x_j$ — число станций типа $j$. Целевая функция (3.1) и ограничения (3.2)–(3.6):
 
 $$
 \begin{aligned}
-\max_{y,t}\quad &\sum_j c_jy_j\\
-\sum_j q_jy_j &=1,\\
-\sum_j a_jy_j &\ge At,\\
-\sum_j b_jy_j &\ge Bt,\\
-\sum_j c_jy_j &\ge Ct,\\
-\sum_j d_jy_j &\le Dt,\\
-y_j,t&\ge0.
+\min_{x}\quad L(x)&=\sum_{j=1}^{n}f_jx_j,\\
+\sum_{j=1}^{n}a_jx_j&\ge A,\\
+\sum_{j=1}^{n}b_jx_j&\ge B,\\
+\sum_{j=1}^{n}c_jx_j&\ge C,\\
+\sum_{j=1}^{n}d_jx_j&\le D,\\
+x_j&\ge 0,\qquad j=1,\ldots,n.
 \end{aligned}
 $$
 
-Здесь $t>0$: из $\sum_j q_jy_j=1$ и $d_j>0$ следует $\sum_jd_jy_j>0$, а бюджет даёт $Dt\ge\sum_jd_jy_j$. Поэтому обратная замена $x_j=y_j/t$ определена и даёт допустимый план исходной задачи.
+Затраты $d_j$ входят только в ограничение бюджета; целевая функция учитывает годовые эксплуатационные расходы $f_j$. В записи (3.1)–(3.6) переменные непрерывны. На с. 62 методички отмечено, что физически число станций должно быть целым и простое округление LP-решения может нарушить ограничения. Поэтому ниже решаются обе постановки: исходная линейная модель и её целочисленный вариант с $x_j\in\mathbb Z_{\ge0}$.
 """)
 
 md(r"""
-## Прямая задача в Pyomo
+## Решение в Pyomo
 """)
 
 code('''
     def solve(model):
-        """Решить линейную модель и проверить статус HiGHS."""
+        """Решить модель и проверить оптимальность результата HiGHS."""
         solver = pyo.SolverFactory("appsi_highs")
         if not solver.available():
             raise RuntimeError("Установите pyomo и highspy из requirements.txt")
+
         result = solver.solve(model)
         if result.solver.termination_condition != TerminationCondition.optimal:
             raise RuntimeError(f"HiGHS: {result.solver.termination_condition}")
         return model
+
 
     types = list(stations.index)
     a = stations["a, МВт"].to_dict()
@@ -133,153 +112,105 @@ code('''
     c = stations["c, ГВт·ч/год"].to_dict()
     d = stations["d, млн руб."].to_dict()
     f = stations["f, млн руб./год"].to_dict()
-    q = stations["q = d + f, млн руб."].to_dict()
 
-    primal = pyo.ConcreteModel()
-    primal.J = pyo.Set(initialize=types, ordered=True)
-    # По Чарнесу—Куперу t — обратный знаменатель, y_j = t·x_j.
-    primal.y = pyo.Var(primal.J, domain=pyo.NonNegativeReals)
-    primal.t = pyo.Var(domain=pyo.NonNegativeReals)
 
-    # Нормировка знаменателя делает дробную цель линейной.
-    primal.efficiency = pyo.Objective(
-        expr=sum(c[j] * primal.y[j] for j in primal.J),
-        sense=pyo.maximize,
-    )
-    primal.normalization = pyo.Constraint(
-        expr=sum(q[j] * primal.y[j] for j in primal.J) == 1
-    )
-    # Все ресурсные требования умножены на одну и ту же переменную t.
-    primal.guaranteed = pyo.Constraint(
-        expr=sum(a[j] * primal.y[j] for j in primal.J) >= A * primal.t
-    )
-    primal.peak = pyo.Constraint(
-        expr=sum(b[j] * primal.y[j] for j in primal.J) >= B * primal.t
-    )
-    primal.generation = pyo.Constraint(
-        expr=sum(c[j] * primal.y[j] for j in primal.J) >= C * primal.t
-    )
-    primal.budget = pyo.Constraint(
-        expr=sum(d[j] * primal.y[j] for j in primal.J) <= D * primal.t
-    )
-    solve(primal)
+    def build_model(integer=False):
+        """Построить модель (3.1)–(3.6) с выбранной областью переменных."""
+        model = pyo.ConcreteModel()
+        model.J = pyo.Set(initialize=types, ordered=True)
 
-    t_opt = pyo.value(primal.t)
-    if t_opt <= 0:
-        raise RuntimeError("Нулевая нормировка исключает обратную замену")
-    y_opt = {j: pyo.value(primal.y[j]) for j in types}
-    x_opt = {j: y_opt[j] / t_opt for j in types}
-    total_generation = sum(c[j] * x_opt[j] for j in types)
-    capital_cost = sum(d[j] * x_opt[j] for j in types)
-    operating_cost = sum(f[j] * x_opt[j] for j in types)
-    efficiency = total_generation / (capital_cost + operating_cost)
+        # Целочисленность добавляется только для практического плана.
+        domain = pyo.NonNegativeIntegers if integer else pyo.NonNegativeReals
+        model.x = pyo.Var(model.J, domain=domain)
+
+        # В цели методички входят только годовые эксплуатационные расходы.
+        model.cost = pyo.Objective(
+            expr=sum(f[j] * model.x[j] for j in model.J),
+            sense=pyo.minimize,
+        )
+        model.guaranteed = pyo.Constraint(
+            expr=sum(a[j] * model.x[j] for j in model.J) >= A
+        )
+        model.peak = pyo.Constraint(
+            expr=sum(b[j] * model.x[j] for j in model.J) >= B
+        )
+        model.generation = pyo.Constraint(
+            expr=sum(c[j] * model.x[j] for j in model.J) >= C
+        )
+        model.budget = pyo.Constraint(
+            expr=sum(d[j] * model.x[j] for j in model.J) <= D
+        )
+        return model
+
+
+    lp = solve(build_model())
+    mip = solve(build_model(integer=True))
+
+    x_lp = {j: pyo.value(lp.x[j]) for j in types}
+    x_mip = {j: int(round(pyo.value(mip.x[j]))) for j in types}
 
     plan = pd.DataFrame({
         "Тип станции": types,
-        "y_j": [y_opt[j] for j in types],
-        "x_j = y_j / t": [x_opt[j] for j in types],
-    })
-    indicators = pd.DataFrame({
-        "Показатель": ["Гарантированная мощность", "Пиковая мощность",
-                       "Годовая выработка", "Строительство",
-                       "Эксплуатация за год", "Совокупные затраты"],
-        "Значение": [sum(a[j] * x_opt[j] for j in types),
-                     sum(b[j] * x_opt[j] for j in types),
-                     total_generation, capital_cost, operating_cost,
-                     capital_cost + operating_cost],
-        "Требование": [f"≥ {A}", f"≥ {B}", f"≥ {C}",
-                       f"≤ {D}", "—", "—"],
-    })
-    display(plan.round({"y_j": 6, "x_j = y_j / t": 3}).set_index("Тип станции"))
-    print(f"t = {t_opt:.6f}")
-    display(indicators.round(3).set_index("Показатель"))
-    print(f"Эффективность Z = {efficiency:.3f} ГВт·ч/млн руб.")
-    assert np.isclose(efficiency, pyo.value(primal.efficiency), atol=1e-9)
+        "LP, станций": [x_lp[j] for j in types],
+        "Целочисленный план, станций": [x_mip[j] for j in types],
+    }).set_index("Тип станции")
+    display(plan.round(3))
 ''')
 
 md(r"""
-## Двойственная задача
+## Проверка ограничений и округления
 
-Для вывода двойственной модели запишем четыре неравенства прямой LP в форме «$\le0$»:
-
-$$
-At-\sum_j a_jy_j\le0,\quad
-Bt-\sum_j b_jy_j\le0,\quad
-Ct-\sum_j c_jy_j\le0,\quad
-\sum_j d_jy_j-Dt\le0.
-$$
-
-Им соответствуют множители $\lambda_A,\lambda_B,\lambda_C,\lambda_D\ge0$. Равенству $\sum_jq_jy_j=1$ соответствует свободная переменная $u\in\mathbb R$. Двойственная задача:
-
-$$
-\begin{aligned}
-\min\quad &u\\
-q_ju-a_j\lambda_A-b_j\lambda_B-c_j\lambda_C
-  +d_j\lambda_D&\ge c_j &&(j=1,2,3),\\
-A\lambda_A+B\lambda_B+C\lambda_C-D\lambda_D&\ge0,\\
-\lambda_A,\lambda_B,\lambda_C,\lambda_D&\ge0,\qquad u\in\mathbb R.
-\end{aligned}
-$$
-
-Последнее неравенство отвечает столбцу неотрицательной переменной $t$. Так как в найденном плане $t>0$, оно выполняется как равенство по условию дополняющей нежёсткости.
-""")
-
-md(r"""
-## Двойственная задача в Pyomo
+Для каждого плана рассчитываются фактические мощности, выработка, строительные и эксплуатационные затраты. Округление LP-решения до ближайшего целого числа станций приведено только для проверки предупреждения на с. 62 методички; оно не является методом решения целочисленной задачи.
 """)
 
 code('''
-    dual = pyo.ConcreteModel()
-    dual.J = pyo.Set(initialize=types, ordered=True)
-    dual.resource = pyo.Set(initialize=["A", "B", "C", "D"])
-    dual.u = pyo.Var(domain=pyo.Reals)
-    dual.lam = pyo.Var(dual.resource, domain=pyo.NonNegativeReals)
-    dual.bound = pyo.Objective(expr=dual.u, sense=pyo.minimize)
+    # Допуск устраняет погрешность решателя около 0,5 при округлении вверх.
+    x_rounded = {j: int(np.floor(x_lp[j] + 0.5 + 1e-8)) for j in types}
 
-    def station_column(model, j):
-        # Каждый столбец y_j даёт отдельное двойственное ограничение.
-        return (
-            q[j] * model.u
-            - a[j] * model.lam["A"]
-            - b[j] * model.lam["B"]
-            - c[j] * model.lam["C"]
-            + d[j] * model.lam["D"] >= c[j]
-        )
 
-    dual.station = pyo.Constraint(dual.J, rule=station_column)
-    # Столбец t имеет нулевой коэффициент в прямой целевой функции.
-    dual.scale = pyo.Constraint(
-        expr=A * dual.lam["A"] + B * dual.lam["B"]
-             + C * dual.lam["C"] - D * dual.lam["D"] >= 0
-    )
-    solve(dual)
+    def totals(x):
+        """Рассчитать показатели плана в единицах исходных данных."""
+        return {
+            "Гарантированная мощность, МВт": sum(a[j] * x[j] for j in types),
+            "Пиковая мощность, МВт": sum(b[j] * x[j] for j in types),
+            "Годовая выработка, ГВт·ч": sum(c[j] * x[j] for j in types),
+            "Строительство, млн руб.": sum(d[j] * x[j] for j in types),
+            "Эксплуатация, млн руб./год": sum(f[j] * x[j] for j in types),
+        }
 
-    dual_values = pd.DataFrame({
-        "Множитель": ["λ_A", "λ_B", "λ_C", "λ_D", "u (свободная)"],
-        "Значение": [pyo.value(dual.lam[k]) for k in ("A", "B", "C", "D")]
-                    + [pyo.value(dual.u)],
+
+    check = pd.DataFrame({
+        "LP": totals(x_lp),
+        "Округление LP": totals(x_rounded),
+        "Целочисленный оптимум": totals(x_mip),
     })
-    primal_value = pyo.value(primal.efficiency)
-    dual_value = pyo.value(dual.bound)
-    display(dual_values.round(3).set_index("Множитель"))
-    print(f"Прямая цель: {primal_value:.6f}")
-    print(f"Двойственная цель: {dual_value:.6f}")
-    print(f"Разрыв двойственности: {abs(primal_value - dual_value):.9f}")
-    print(f"Предельный эффект бюджета t·λ_D: "
-          f"{t_opt * pyo.value(dual.lam['D']):.6f} "
-          "ГВт·ч/млн руб. на 1 млн руб. бюджета")
-    assert np.isclose(primal_value, dual_value, atol=1e-8)
+    check.insert(0, "Требование", [
+        f"≥ {A}", f"≥ {B}", f"≥ {C}", f"≤ {D}", "минимум"
+    ])
+    display(check.round(3))
+
+    lp_cost = pyo.value(lp.cost)
+    mip_cost = pyo.value(mip.cost)
+    print(f"Минимум LP: {lp_cost:.3f} млн руб./год")
+    print(f"Минимум целочисленной модели: {mip_cost:.3f} млн руб./год")
+    print(f"Разница: {mip_cost - lp_cost:.3f} млн руб./год")
+
+    assert np.isclose(lp_cost, 65.0)
+    assert np.isclose(mip_cost, 70.0)
+    assert totals(x_mip)["Строительство, млн руб."] <= D
+    assert totals(x_rounded)["Строительство, млн руб."] > D
 ''')
 
 md(r"""
-## Интерпретация решения
+## Вывод
 
-Оптимальный состав в непрерывной модели: 5 базовых и 0,5 пиковой станции; универсальные станции не строятся. Годовая выработка составляет 1765 ГВт·ч, капитальные затраты — 430 млн руб., эксплуатационные расходы за год — 65 млн руб. Эффективность за первый год равна $1765/495\approx3{,}566$ ГВт·ч на 1 млн руб. совокупных затрат. Дробное число станций допустимо только в принятой LP-постановке.
+Решение непрерывной модели (3.1)–(3.6): 5 базовых и 0,5 пиковой станции; минимальные эксплуатационные расходы составляют 65 млн руб./год. Это нижняя оценка затрат для целочисленного плана, но половину станции построить нельзя.
 
-Пиковая мощность и строительный бюджет используются полностью. Поэтому $\lambda_B>0$ и $\lambda_D>0$; запас по гарантированной мощности и годовой выработке соответствует $\lambda_A=\lambda_C=0$. Величина $\lambda_D$ — оценка нормированного бюджетного ограничения. При малом увеличении исходного бюджета $D$ предельное изменение оптимальной эффективности равно $t\lambda_D\approx0{,}029$ единицы показателя на дополнительный 1 млн руб. бюджета, пока оптимальный базис не меняется.
+Целочисленный оптимум: **2 базовые, 1 пиковая и 1 универсальная станция**. Он обеспечивает 235 МВт гарантированной мощности, 350 МВт пиковой мощности и 1390 ГВт·ч годовой выработки при строительном бюджете 430 млн руб. Минимальные годовые эксплуатационные расходы — **70 млн руб.**
 
-Оптимальные значения прямой и двойственной LP совпадают: $Z^*=u^*\approx3{,}566$. Это численная проверка сильной двойственности.
+Округление непрерывного решения до 5 базовых и 1 пиковой станции даёт строительные затраты 510 млн руб., то есть превышает бюджет на 80 млн руб. Разница между целочисленным оптимумом и нижней оценкой LP составляет 5 млн руб./год.
 """)
+
 
 NOTEBOOK = nbf.v4.new_notebook(cells=CELLS)
 NOTEBOOK.metadata["kernelspec"] = {
@@ -288,6 +219,7 @@ NOTEBOOK.metadata["kernelspec"] = {
     "name": "python3",
 }
 NOTEBOOK.metadata["language_info"] = {"name": "python", "version": "3.12"}
+
 target = ROOT / "sppr_bonus_energy.ipynb"
 nbf.write(NOTEBOOK, target)
 print(f"Created {target} ({len(CELLS)} cells)")
