@@ -34,6 +34,7 @@ code('''
     import numpy as np
     import pandas as pd
     import pyomo.environ as pyo
+    from IPython.display import display
     from pyomo.opt import TerminationCondition
 
     pd.set_option("display.max_columns", None)
@@ -130,26 +131,48 @@ $$\begin{aligned}
 """)
 
 code('''
+    furnco_items = (
+        "Стол без отделки", "Стол готовый",
+        "Стул без отделки", "Стул готовый",
+    )
+    furnco_revenue = dict(zip(furnco_items, (70, 140, 60, 110)))
+    furnco_wood = dict(zip(furnco_items, (15, 15, 5, 5)))
+    furnco_labor = dict(zip(furnco_items, (2, 5, 2, 4)))
+
+    unit_economics = pd.DataFrame({
+        "Изделие": furnco_items,
+        "Выручка, $": [furnco_revenue[k] for k in furnco_items],
+        "Древесина, фут": [furnco_wood[k] for k in furnco_items],
+        "Труд, ч": [furnco_labor[k] for k in furnco_items],
+    }).set_index("Изделие")
+    # Цена древесины — 1 доллар за фут.
+    unit_economics["Прибыль, $"] = (
+        unit_economics["Выручка, $"] - unit_economics["Древесина, фут"]
+    )
+    unit_economics["Прибыль на час, $/ч"] = (
+        unit_economics["Прибыль, $"] / unit_economics["Труд, ч"]
+    )
+    print("Экономика единицы изделия")
+    display(unit_economics.round(2))
+
     def furnco_model():
         """Построить задачу Furnco с уточнёнными нормами древесины."""
         model = pyo.ConcreteModel()
-        kinds = ("Стол без отделки", "Стол готовый",
-                 "Стул без отделки", "Стул готовый")
-        model.kind = pyo.Set(initialize=kinds, ordered=True)
-        revenue = dict(zip(kinds, (70, 140, 60, 110)))
-        labor = dict(zip(kinds, (2, 5, 2, 4)))
-        wood = dict(zip(kinds, (15, 15, 5, 5)))
+        model.kind = pyo.Set(initialize=furnco_items, ordered=True)
         model.qty = pyo.Var(model.kind, domain=pyo.NonNegativeReals)
         # Древесина оплачивается даже для изделия без отделки.
         model.profit = pyo.Objective(
-            expr=sum((revenue[k] - wood[k]) * model.qty[k] for k in kinds),
+            expr=sum((furnco_revenue[k] - furnco_wood[k]) * model.qty[k]
+                     for k in model.kind),
             sense=pyo.maximize,
         )
         model.wood = pyo.Constraint(
-            expr=sum(wood[k] * model.qty[k] for k in kinds) <= 40_000
+            expr=sum(furnco_wood[k] * model.qty[k]
+                     for k in model.kind) <= 40_000
         )
         model.labor = pyo.Constraint(
-            expr=sum(labor[k] * model.qty[k] for k in kinds) <= 6_000
+            expr=sum(furnco_labor[k] * model.qty[k]
+                     for k in model.kind) <= 6_000
         )
         return model
 
@@ -160,18 +183,54 @@ code('''
     })
     wood_used = pyo.value(m22.wood.body)
     labor_used = pyo.value(m22.labor.body)
+    print("План, найденный HiGHS")
     print(furnco_plan.round(3).to_string(index=False))
     print(f"Прибыль: ${pyo.value(m22.profit):,.2f}")
     print(f"Древесина: {wood_used:,.0f} из 40,000 футов")
     print(f"Труд: {labor_used:,.0f} из 6,000 часов")
+
+    # Концы и внутренняя точка отрезка оптимальных решений.
+    def furnco_example(tables):
+        quantities = dict(zip(furnco_items, (tables, 0, 3_000 - tables, 0)))
+        return {
+            "Незавершённых столов": tables,
+            "Незавершённых стульев": 3_000 - tables,
+            "Древесина, фут": sum(
+                furnco_wood[k] * quantities[k] for k in furnco_items
+            ),
+            "Труд, ч": sum(
+                furnco_labor[k] * quantities[k] for k in furnco_items
+            ),
+            "Прибыль, $": sum(
+                (furnco_revenue[k] - furnco_wood[k]) * quantities[k]
+                for k in furnco_items
+            ),
+        }
+
+    optimal_examples = pd.DataFrame(
+        [furnco_example(t) for t in (0, 1_250, 2_500)],
+        index=["Только стулья", "Смешанный план", "Максимум столов"],
+    )
+    print("Примеры оптимальных планов")
+    display(optimal_examples)
 ''')
 
 md(r"""
-Максимальная прибыль — **165 000 долл.** Незавершённый стол и незавершённый стул дают одинаковую прибыль 55 долл. за 2 ч труда; готовые изделия уступают им по прибыли на час. Поэтому оптимальное решение не единственно:
+**Расчёт прибыли на час.** Таблица выше показывает: незавершённый стол — (70 − 15) / 2 = 27,50 долл./ч; готовый стол — (140 − 15) / 5 = 25,00 долл./ч; незавершённый стул — (60 − 5) / 2 = 27,50 долл./ч; готовый стул — (110 − 5) / 4 = 26,25 долл./ч. При 6000 доступных часах прибыль любого допустимого плана не превышает 27,50 × 6000 = **165 000 долл.**
 
-$$T_f=C_f=0,\qquad T_u+C_u=3000,\qquad 0\le T_u\le2500.$$
+Строгое доказательство оценки: каждый коэффициент прибыли не больше 27,50, умноженного на расход часов соответствующего изделия.
 
-Например, выпуск 3000 незавершённых стульев использует 15 000 футов древесины и все 6000 часов труда. При $T_u=2500$ и $C_u=500$ расход древесины достигает 40 000 футов. Оба плана дают ту же прибыль; таблица выше показывает один из оптимумов, найденный HiGHS.
+$$
+\begin{aligned}
+P&=55T_u+125T_f+55C_u+105C_f\\
+ &\le 27{,}5(2T_u+5T_f+2C_u+4C_f)\\
+ &\le 27{,}5\cdot6000=165000.
+\end{aligned}
+$$
+
+Равенство возможно только без готовых изделий и при полном использовании труда. Следовательно, незавершённых столов и стульев вместе должно быть 3000. Пусть столов t, тогда стульев 3000 − t. Расход древесины равен 15t + 5(3000 − t) = 15000 + 10t; ограничение 40 000 футов даёт **0 ≤ t ≤ 2500**.
+
+**Все оптимумы непрерывной модели:** готовых столов и стульев — 0, незавершённых столов — t, незавершённых стульев — 3000 − t для любого t от 0 до 2500. В таблице показаны оба конца и один промежуточный план. Если дополнительно требовать целые количества мебели, получаются **2501 оптимальный план**: t = 0, 1, …, 2500.
 """)
 
 md(r"""
